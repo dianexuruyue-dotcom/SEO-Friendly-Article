@@ -8,7 +8,7 @@ Blog Creation Workflow V0
 
 ### Install dependencies
 1. Create and activate a virtual environment:
-   - `python -m venv .venv`
+   - `python3 -m venv .venv`
    - `source .venv/bin/activate`
 2. Install project dependencies:
    - `pip install -e .`
