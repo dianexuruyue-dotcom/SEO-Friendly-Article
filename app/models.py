@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -18,10 +18,11 @@ class Role(str, Enum):
 
 class ArticleStatus(str, Enum):
     WRITING = "writing"
-    READY_FOR_REVIEW = "ready_for_review"
-    READY_FOR_PUBLISH = "ready_for_publish"
+    PENDING_REVIEW = "pending_review"
+    READY_TO_PUBLISH = "ready_to_publish"
     PUBLISHED = "published"
     INDEXING_MONITORING = "indexing_monitoring"
+    INDEXED = "indexed"
 
 
 class IndexingStatus(str, Enum):
@@ -52,10 +53,13 @@ class Keyword(BaseModel):
     id: int
     site_id: int
     language: str
-    term: str
+    keyword: str
     intent: str
+    search_volume: int
     difficulty: int
     priority: int
+    priority_score: int
+    cluster: str | None = None
     created_at: datetime
 
 
@@ -65,20 +69,39 @@ class QualityIssue(BaseModel):
     severity: str
 
 
+class ReviewRecord(BaseModel):
+    review_step: str
+    approved: bool
+    reviewer_role: Role
+    reviewed_at: datetime
+
+
+class IndexingCheck(BaseModel):
+    day_offset: int
+    status: IndexingStatus
+    checked_at: datetime
+    recommendation: str
+
+
 class Article(BaseModel):
     id: int
     site_id: int
-    keyword_id: int
     language: str
     title: str
     slug: str
     content: str
+    author: str
+    author_id: int
+    assignee_id: int
+    primary_keyword_id: int
+    primary_keyword: str
+    secondary_keywords: list[str] = Field(default_factory=list)
     status: ArticleStatus
     quality_score: int | None = None
+    hard_gate_passed: bool = False
     quality_issues: list[QualityIssue] = Field(default_factory=list)
-    owner_user_id: int
-    reviewer_user_id: int | None = None
-    publisher_user_id: int | None = None
+    review_records: list[ReviewRecord] = Field(default_factory=list)
+    indexing_checks: list[IndexingCheck] = Field(default_factory=list)
     published_url: str | None = None
     published_at: datetime | None = None
     indexing_status: IndexingStatus = IndexingStatus.NOT_STARTED
@@ -106,6 +129,13 @@ class InMemoryDB(BaseModel):
         self.users.clear()
         self.keywords.clear()
         self.articles.clear()
+        self.users[1] = User(
+            id=1,
+            name="System Admin",
+            role=Role.ADMIN,
+            created_at=datetime.now(timezone.utc),
+        )
 
 
 db = InMemoryDB()
+db.reset()

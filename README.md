@@ -35,18 +35,25 @@ In another terminal:
 
 All protected endpoints require an `X-User-Id` header.
 
-### 1. Create a keyword (SEO manager)
-- `curl -s -X POST http://127.0.0.1:8000/keywords -H "Content-Type: application/json" -H "X-User-Id: u-seo-1" -d '{"keyword":"best seo tools","language":"en","site_id":"site-en","difficulty":35,"search_volume":1200,"intent":"commercial"}'`
+### Bootstrap users
+- The system preloads admin user `id=1` at startup.
+- Create additional users using admin header:
+  - `curl -s -X POST http://127.0.0.1:8000/users -H "Content-Type: application/json" -H "X-User-Id: 1" -d '{"name":"SEO","role":"seo_manager"}'`
 
-### 2. Create an article task (author)
-- `curl -s -X POST http://127.0.0.1:8000/articles -H "Content-Type: application/json" -H "X-User-Id: u-author-1" -d '{"title":"Best SEO Tools for 2026","site_id":"site-en","language":"en","primary_keyword":"best seo tools","content":"# Heading\nThis is a practical guide...","assignee_id":"u-author-1"}'`
+### Create a site
+- `curl -s -X POST http://127.0.0.1:8000/sites -H "Content-Type: application/json" -H "X-User-Id: 1" -d '{"name":"Global Site","domain":"example.com","default_language":"en","supported_languages":["en","fr"]}'`
 
-### 3. Run strict quality check (editor)
-- `curl -s -X POST http://127.0.0.1:8000/articles/<ARTICLE_ID>/quality-check -H "X-User-Id: u-editor-1"`
+### Create a keyword
+- `curl -s -X POST http://127.0.0.1:8000/keywords -H "Content-Type: application/json" -H "X-User-Id: 2" -d '{"site_id":1,"language":"en","keyword":"seo content workflow","intent":"informational","search_volume":2600,"difficulty":42,"priority":8,"cluster":"workflow"}'`
 
-### 4. Approve and publish (reviewer/publisher)
-- `curl -s -X POST http://127.0.0.1:8000/articles/<ARTICLE_ID>/review -H "Content-Type: application/json" -H "X-User-Id: u-reviewer-1" -d '{"approved":true}'`
-- `curl -s -X POST http://127.0.0.1:8000/articles/<ARTICLE_ID>/publish -H "Content-Type: application/json" -H "X-User-Id: u-publisher-1" -d '{"site_base_url":"https://content.example.com"}'`
-
-### 5. Run indexing check (SEO manager)
-- `curl -s -X POST http://127.0.0.1:8000/articles/<ARTICLE_ID>/index-check -H "X-User-Id: u-seo-1"`
+### Create article and run flow
+- Create article:
+  - `curl -s -X POST http://127.0.0.1:8000/articles -H "Content-Type: application/json" -H "X-User-Id: 3" -d '{"site_id":1,"language":"en","title":"How to Build a Strict SEO Content Workflow That Scales","slug":"strict-seo-content-workflow","content":"# SEO\n## Plan\n...","author":"Alice","author_id":3,"assignee_id":4,"primary_keyword_id":1,"primary_keyword":"seo content workflow","secondary_keywords":["seo workflow"]}'`
+- Quality check:
+  - `curl -s -X POST http://127.0.0.1:8000/articles/1/quality-check -H "X-User-Id: 4"`
+- Submit/review/publish:
+  - `curl -s -X POST http://127.0.0.1:8000/articles/1/submit-review -H "X-User-Id: 4"`
+  - `curl -s -X POST http://127.0.0.1:8000/articles/1/review -H "Content-Type: application/json" -H "X-User-Id: 5" -d '{"review_step":"editorial","approved":true}'`
+  - `curl -s -X POST http://127.0.0.1:8000/articles/1/publish -H "X-User-Id: 6"`
+- Indexing check:
+  - `curl -s -X POST http://127.0.0.1:8000/articles/1/indexing-check -H "Content-Type: application/json" -H "X-User-Id: 2" -d '{"day_offset":7}'`

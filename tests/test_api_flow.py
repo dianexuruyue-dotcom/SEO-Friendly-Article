@@ -11,14 +11,14 @@ def _headers(user_id: int) -> dict[str, str]:
 
 
 def _good_content() -> str:
-    words = " ".join(["seo"] * 320)
+    words = " ".join(["seo content workflow"] * 320)
     return f"# SEO Workflow Guide\n\n## Planning\n\n{words}\n\nReference: https://example.com/ref"
 
 
 def test_complete_seo_platform_flow() -> None:
     client.post("/_test/reset")
 
-    admin = client.post("/users", json={"name": "Admin", "role": "admin"})
+    admin = client.post("/users", json={"name": "Admin", "role": "admin"}, headers=_headers(1))
     seo_manager = client.post("/users", json={"name": "SEO", "role": "seo_manager"}, headers=_headers(1))
     assert admin.status_code == 201
     assert seo_manager.status_code == 201

@@ -1,4 +1,6 @@
-from fastapi import Header, HTTPException, status
+from datetime import datetime, timezone
+
+from fastapi import Depends, Header, HTTPException, status
 
 from app.models import Role, User, db
 
@@ -19,7 +21,12 @@ def get_user(x_user_id: str | None = Header(default=None, alias="X-User-Id")) ->
         ) from exc
 
     if user_id == 1:
-        return User(id=1, name="system-admin", role=Role.ADMIN, created_at=None)
+        return User(
+            id=1,
+            name="system-admin",
+            role=Role.ADMIN,
+            created_at=datetime.now(timezone.utc),
+        )
 
     user = db.users.get(user_id)
     if user is None:
@@ -31,7 +38,7 @@ def get_user(x_user_id: str | None = Header(default=None, alias="X-User-Id")) ->
 
 
 def require_role(allowed_roles: set[Role]):
-    def dependency(user: User = get_user) -> User:
+    def dependency(user: User = Depends(get_user)) -> User:
         if user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

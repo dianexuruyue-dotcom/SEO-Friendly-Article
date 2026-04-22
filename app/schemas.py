@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.models import ArticleStatus, IndexingStatus, QualityIssue, Role
+from app.models import ArticleStatus, IndexingCheck, IndexingStatus, QualityIssue, Role
 
 
 class SiteCreate(BaseModel):
@@ -103,8 +103,9 @@ class ArticleResponse(BaseModel):
     status: ArticleStatus
     quality_score: int | None
     quality_issues: list[QualityIssue]
-    review_comments: list[str]
+    review_records: list[dict]
     indexing_status: IndexingStatus
+    indexing_checks: list[IndexingCheck]
     published_url: str | None
     published_at: datetime | None
     created_at: datetime

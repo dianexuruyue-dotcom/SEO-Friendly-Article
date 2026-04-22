@@ -10,6 +10,7 @@ from app.models import (
     IndexingStatus,
     Keyword,
     QualityIssue,
+    ReviewRecord,
     Role,
     Site,
     User,
@@ -26,6 +27,7 @@ from app.schemas import (
     KeywordListResponse,
     KeywordResponse,
     QualityCheckResponse,
+    ReviewRequest,
     SiteCreate,
     SiteListResponse,
     SiteResponse,
@@ -140,10 +142,11 @@ def run_quality(article: Article) -> QualityCheckResponse:
     hard_gate_passed = len(errors) == 0 and score >= 85
 
     article.quality_score = score
+    article.hard_gate_passed = hard_gate_passed
     article.quality_issues = issues
     article.updated_at = now_utc()
     if hard_gate_passed:
-        article.status = ArticleStatus.READY_FOR_REVIEW
+        article.status = ArticleStatus.PENDING_REVIEW
     else:
         article.status = ArticleStatus.WRITING
 
@@ -271,6 +274,8 @@ def create_article(
 ) -> ArticleResponse:
     ensure_site(payload.site_id)
     ensure_keyword(payload.primary_keyword_id)
+    ensure_user(payload.author_id)
+    ensure_user(payload.assignee_id)
     article = Article(
         id=db.article_id_seq,
         site_id=payload.site_id,
@@ -279,18 +284,20 @@ def create_article(
         slug=payload.slug,
         content=payload.content,
         author=payload.author,
+        author_id=payload.author_id,
+        assignee_id=payload.assignee_id,
         primary_keyword_id=payload.primary_keyword_id,
         primary_keyword=payload.primary_keyword,
         secondary_keywords=payload.secondary_keywords,
         status=ArticleStatus.WRITING,
         quality_score=None,
-        quality_status=QualityStatus.NOT_CHECKED,
         hard_gate_passed=False,
-        quality_report=[],
+        quality_issues=[],
         review_records=[],
         published_url=None,
         published_at=None,
-        indexing_status=IndexingStatus.NOT_CHECKED,
+        indexing_status=IndexingStatus.NOT_STARTED,
+        indexing_checks=[],
         created_at=now_utc(),
         updated_at=now_utc(),
     )
@@ -348,7 +355,12 @@ def submit_review(
             detail="Article must pass strict quality check before review.",
         )
     old_status = article.status
-    article.status = ArticleStatus.READY_FOR_REVIEW
+    if article.status not in {ArticleStatus.WRITING, ArticleStatus.PENDING_REVIEW}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Article is not ready to enter review.",
+        )
+    article.status = ArticleStatus.PENDING_REVIEW
     article.updated_at = now_utc()
     return status_changed(article, old_status)
 
@@ -360,7 +372,7 @@ def review_article(
     actor: User = Depends(require_role({Role.ADMIN, Role.SEO_MANAGER, Role.REVIEWER})),
 ) -> StatusChangeResponse:
     article = ensure_article(article_id)
-    require_article_status(article, ArticleStatus.READY_FOR_REVIEW)
+    require_article_status(article, ArticleStatus.PENDING_REVIEW)
     step = payload.review_step
     approved = payload.approved
     old_status = article.status
@@ -375,7 +387,7 @@ def review_article(
     if approved and step == "editorial":
         article.status = ArticleStatus.READY_TO_PUBLISH
     elif approved:
-        article.status = ArticleStatus.READY_FOR_REVIEW
+        article.status = ArticleStatus.PENDING_REVIEW
     else:
         article.status = ArticleStatus.WRITING
     article.updated_at = now_utc()
@@ -405,31 +417,42 @@ def indexing_check(
     _: User = Depends(require_role({Role.ADMIN, Role.SEO_MANAGER, Role.REVIEWER, Role.PUBLISHER, Role.VIEWER})),
 ) -> IndexingCheckResponse:
     article = ensure_article(article_id)
-    if article.status not in {ArticleStatus.PUBLISHED, ArticleStatus.READY_TO_PUBLISH, ArticleStatus.INDEXED}:
+    if article.status not in {ArticleStatus.PUBLISHED, ArticleStatus.INDEXING_MONITORING, ArticleStatus.INDEXED}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Article must be published first")
 
     if payload.day_offset <= 1:
-        new_status = IndexingStatus.PENDING
+        new_status = IndexingStatus.PENDING_CRAWL
         recommendation = "Keep monitoring indexing status."
     elif payload.day_offset <= 7:
         new_status = IndexingStatus.INDEXED
         recommendation = "Indexed successfully."
     elif payload.day_offset <= 14:
-        new_status = IndexingStatus.PENDING
+        new_status = IndexingStatus.CRAWLED_NOT_INDEXED
         recommendation = "Strengthen internal links and update article depth."
     else:
-        new_status = IndexingStatus.FAILED
+        new_status = IndexingStatus.INDEXING_ISSUE
         recommendation = "Investigate robots/sitemap/canonical settings and request reindex."
 
     article.indexing_status = new_status
-    article.status = ArticleStatus.INDEXED if new_status == IndexingStatus.INDEXED else ArticleStatus.PUBLISHED
+    article.status = (
+        ArticleStatus.INDEXED
+        if new_status == IndexingStatus.INDEXED
+        else ArticleStatus.INDEXING_MONITORING
+    )
     article.updated_at = now_utc()
-    article.quality_report.append(f"indexing@day{payload.day_offset}:{new_status.value}")
+    article.indexing_checks.append(
+        IndexingCheck(
+            day_offset=payload.day_offset,
+            status=new_status,
+            checked_at=article.updated_at,
+            recommendation=recommendation,
+        )
+    )
 
     return IndexingCheckResponse(
         article_id=article.id,
         status=new_status,
-        note=recommendation,
+        recommendation=recommendation,
         checked_at=article.updated_at,
     )
 
@@ -449,3 +472,9 @@ def dashboard(_: User = Depends(require_role({Role.ADMIN, Role.SEO_MANAGER, Role
         articles_by_status=by_status,
         articles_by_indexing=by_indexing,
     )
+
+
+@app.post("/_test/reset")
+def reset_data() -> dict[str, str]:
+    db.reset()
+    return {"status": "ok"}
